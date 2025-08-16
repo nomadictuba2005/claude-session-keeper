@@ -257,10 +257,14 @@ Time: {datetime.now()}
         while True:
             now = datetime.now(pst)
             
-            # Check if it's time for daily reset (higher priority)
-            if next_daily_reset and now >= next_daily_reset:
+            # Determine which event comes next: 5-hour check or daily reset
+            time_to_next_run = (next_run - now).total_seconds()
+            time_to_daily_reset = (next_daily_reset - now).total_seconds() if next_daily_reset else float('inf')
+            
+            # If daily reset is closer than 5-hour check, wait for daily reset
+            if next_daily_reset and time_to_daily_reset <= time_to_next_run and now >= next_daily_reset:
                 self.logger.info(f"🔄 DAILY RESET at {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-                self.logger.info("Starting fresh Claude Code session for the day")
+                self.logger.info("Daily reset overriding 5-hour schedule - starting fresh session")
                 
                 # Save timestamp for resume feature
                 with open('last_run_timestamp.txt', 'w') as f:
@@ -281,11 +285,11 @@ Time: {datetime.now()}
                 minutes = int((time_until_next.total_seconds() % 3600) // 60)
                 seconds = int(time_until_next.total_seconds() % 60)
                 
-                self.logger.info(f"Next 5-hour check: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                self.logger.info(f"5-hour schedule reset - Next check: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
                 self.logger.info(f"Next daily reset: {next_daily_reset.strftime('%Y-%m-%d %H:%M:%S %Z')}")
                 self.logger.info(f"Time until next check: {hours}h {minutes}m {seconds}s")
                 
-            # Check if it's time for regular 5-hour run
+            # Check if it's time for regular 5-hour run (only if no daily reset is pending)
             elif now >= next_run:
                 self.logger.info(f"Running scheduled health check at {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
                 
