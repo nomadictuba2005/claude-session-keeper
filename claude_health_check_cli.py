@@ -287,8 +287,44 @@ Time: {datetime.now()}
             self.logger.info(f"Time until first check: {hours}h {minutes}m {seconds}s")
             self.logger.info("Then every 5 hours after that")
         
+        last_logged_date = None
+        
         while True:
             now = datetime.now(pst)
+            
+            # Check if we've crossed midnight and log today's schedule
+            current_date = now.date()
+            if last_logged_date != current_date:
+                self.logger.info(f"📅 NEW DAY: {current_date.strftime('%A, %B %d, %Y')}")
+                
+                if next_daily_reset:
+                    # Show today's schedule with daily reset
+                    from datetime import timedelta
+                    today_reset = now.replace(hour=int(self.daily_reset_time.split(':')[0]), 
+                                            minute=int(self.daily_reset_time.split(':')[1]), 
+                                            second=10, microsecond=0)
+                    
+                    if now > today_reset:
+                        # Reset already happened today, show remaining checks
+                        self.logger.info(f"Today's daily reset (08:00) already completed")
+                        remaining_checks = []
+                        check_time = today_reset
+                        while check_time.date() == current_date:
+                            check_time += timedelta(hours=5)
+                            if check_time.date() == current_date and check_time > now:
+                                remaining_checks.append(check_time.strftime('%H:%M'))
+                        
+                        if remaining_checks:
+                            self.logger.info(f"Remaining today: {', '.join(remaining_checks)}")
+                        else:
+                            self.logger.info("No more checks today")
+                    else:
+                        # Reset coming today
+                        self.logger.info(f"Today's schedule: 08:00 (reset), 13:00, 18:00, 23:00")
+                else:
+                    self.logger.info("Today's schedule: 5-hour intervals continuing from previous cycle")
+                
+                last_logged_date = current_date
             
             # Determine which event comes next: 5-hour check or daily reset
             time_to_next_run = (next_run - now).total_seconds()
