@@ -238,21 +238,48 @@ Time: {datetime.now()}
         # Calculate next daily reset if enabled
         next_daily_reset = self.calculate_next_daily_reset()
         
-        # Calculate time until first run
+        # Determine what will actually run first
         now = datetime.now(pst)
-        time_until_first = next_run - now
-        hours = int(time_until_first.total_seconds() // 3600)
-        minutes = int((time_until_first.total_seconds() % 3600) // 60)
-        seconds = int(time_until_first.total_seconds() % 60)
-        
-        self.logger.info(f"First health check scheduled for: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        self.logger.info(f"Time until first check: {hours}h {minutes}m {seconds}s")
         
         if next_daily_reset:
-            self.logger.info(f"Daily reset enabled at: {self.daily_reset_time} local time")
-            self.logger.info(f"Next daily reset: {next_daily_reset.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        
-        self.logger.info("Then every 5 hours after that (based on start time)")
+            time_to_next_run = (next_run - now).total_seconds()
+            time_to_daily_reset = (next_daily_reset - now).total_seconds()
+            
+            if time_to_daily_reset <= time_to_next_run:
+                # Daily reset will run first, cancelling the scheduled check
+                self.logger.info(f"Scheduled check at {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} will be CANCELLED")
+                self.logger.info(f"🔄 ACTUAL FIRST RUN: {next_daily_reset.strftime('%Y-%m-%d %H:%M:%S %Z')} (daily reset)")
+                
+                # Calculate time until daily reset
+                hours = int(time_to_daily_reset // 3600)
+                minutes = int((time_to_daily_reset % 3600) // 60)
+                seconds = int(time_to_daily_reset % 60)
+                self.logger.info(f"Time until first run: {hours}h {minutes}m {seconds}s")
+                
+                # Show what happens after daily reset
+                from datetime import timedelta
+                first_after_reset = next_daily_reset + timedelta(hours=5)
+                self.logger.info(f"Then 5-hour checks: {first_after_reset.strftime('%H:%M')}, {(first_after_reset + timedelta(hours=5)).strftime('%H:%M')}, etc.")
+            else:
+                # Regular check will run first
+                time_until_first = next_run - now
+                hours = int(time_until_first.total_seconds() // 3600)
+                minutes = int((time_until_first.total_seconds() % 3600) // 60)
+                seconds = int(time_until_first.total_seconds() % 60)
+                
+                self.logger.info(f"First health check: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                self.logger.info(f"Time until first check: {hours}h {minutes}m {seconds}s")
+                self.logger.info(f"Daily reset at: {next_daily_reset.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        else:
+            # No daily reset, show regular schedule
+            time_until_first = next_run - now
+            hours = int(time_until_first.total_seconds() // 3600)
+            minutes = int((time_until_first.total_seconds() % 3600) // 60)
+            seconds = int(time_until_first.total_seconds() % 60)
+            
+            self.logger.info(f"First health check scheduled for: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            self.logger.info(f"Time until first check: {hours}h {minutes}m {seconds}s")
+            self.logger.info("Then every 5 hours after that (based on start time)")
         
         while True:
             now = datetime.now(pst)
