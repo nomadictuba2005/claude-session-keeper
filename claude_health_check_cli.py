@@ -58,13 +58,15 @@ class ClaudeCodeHealthCheck:
         """Run a simple Claude Code CLI command"""
         try:
             # Use Claude Code CLI to send a simple message
+            self.logger.info("Executing: npx claude --dangerously-skip-permissions Hi")
             result = subprocess.run(
                 ['npx', 'claude', '--dangerously-skip-permissions', 'Hi'],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=120,  # Increased timeout for Pi
                 shell=True
             )
+            self.logger.info(f"Command completed with return code: {result.returncode}")
             
             if result.returncode == 0:
                 response = result.stdout.strip()
