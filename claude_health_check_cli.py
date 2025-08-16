@@ -401,10 +401,22 @@ if __name__ == "__main__":
             scheduled_time = datetime.fromtimestamp(timestamp, tz=pst)
             print(f"Starting first run at unix timestamp: {timestamp}")
             print(f"That's: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            if daily_reset_time:
+                print(f"With daily reset at: {daily_reset_time}")
             print("Starting 24/7 Claude Code health check scheduler...")
             print("Press Ctrl+C to stop")
             try:
                 health_checker.start_scheduler(first_run_timestamp=timestamp)
+            except KeyboardInterrupt:
+                print("\nHealth check scheduler stopped")
+        
+        elif sys.argv[1].startswith("--daily-reset="):
+            # Just daily reset, start immediately with default schedule
+            print(f"Starting with daily reset at: {daily_reset_time}")
+            print("Starting 24/7 Claude Code health check scheduler...")
+            print("Press Ctrl+C to stop")
+            try:
+                health_checker.start_scheduler()
             except KeyboardInterrupt:
                 print("\nHealth check scheduler stopped")
         
