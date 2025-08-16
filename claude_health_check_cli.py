@@ -60,13 +60,19 @@ class ClaudeCodeHealthCheck:
             # Use Claude Code CLI to send a simple message
             self.logger.info("Executing: npx claude --dangerously-skip-permissions Hi")
             
-            # Try different approaches for Pi compatibility
+            # RAM optimizations for Pi 3B
             import os
             env = os.environ.copy()
             env['NODE_ENV'] = 'production'
+            env['NODE_OPTIONS'] = '--max-old-space-size=256 --max-semi-space-size=2'  # Limit Node.js to 256MB
+            env['UV_THREADPOOL_SIZE'] = '2'  # Reduce thread pool
+            env['CLAUDE_DISABLE_TELEMETRY'] = '1'  # Disable telemetry
+            env['CLAUDE_DISABLE_ANALYTICS'] = '1'  # Disable analytics
             
             # Use Popen for real-time output
             self.logger.info("Starting Claude Code process...")
+            self.logger.info(f"RAM optimization: Node.js limited to 256MB")
+            
             process = subprocess.Popen(
                 'npx claude --dangerously-skip-permissions Hi',
                 shell=True,
@@ -76,7 +82,8 @@ class ClaudeCodeHealthCheck:
                 env=env,
                 cwd=os.path.expanduser('~'),
                 universal_newlines=True,
-                bufsize=1
+                bufsize=1,
+                preexec_fn=lambda: os.nice(10) if hasattr(os, 'nice') else None  # Lower priority
             )
             
             # Log output in real-time
