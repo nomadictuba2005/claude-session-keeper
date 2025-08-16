@@ -65,24 +65,57 @@ class ClaudeCodeHealthCheck:
             env = os.environ.copy()
             env['NODE_ENV'] = 'production'
             
-            result = subprocess.run(
+            # Use Popen for real-time output
+            self.logger.info("Starting Claude Code process...")
+            process = subprocess.Popen(
                 'npx claude --dangerously-skip-permissions Hi',
-                capture_output=True,
-                text=True,
-                timeout=480,  # 8 minutes timeout for slow Pi
                 shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
                 env=env,
-                cwd=os.path.expanduser('~')
+                cwd=os.path.expanduser('~'),
+                universal_newlines=True,
+                bufsize=1
             )
-            self.logger.info(f"Command completed with return code: {result.returncode}")
             
-            if result.returncode == 0:
-                response = result.stdout.strip()
-                self.logger.info(f"Claude responded: {response}")
-                return True, response
-            else:
-                self.logger.error(f"Claude command failed: {result.stderr}")
-                return False, result.stderr
+            # Log output in real-time
+            stdout_lines = []
+            stderr_lines = []
+            
+            try:
+                # Wait for completion with timeout
+                stdout, stderr = process.communicate(timeout=480)
+                
+                # Log all output
+                if stdout:
+                    self.logger.info(f"Claude STDOUT:\n{stdout}")
+                    stdout_lines.append(stdout)
+                if stderr:
+                    self.logger.info(f"Claude STDERR:\n{stderr}")
+                    stderr_lines.append(stderr)
+                
+                return_code = process.returncode
+                self.logger.info(f"Command completed with return code: {return_code}")
+                
+                if return_code == 0:
+                    response = stdout.strip() if stdout else ""
+                    self.logger.info(f"Claude responded successfully")
+                    return True, response
+                else:
+                    error_msg = stderr.strip() if stderr else f"Exit code {return_code}"
+                    self.logger.error(f"Claude command failed: {error_msg}")
+                    return False, error_msg
+                    
+            except subprocess.TimeoutExpired:
+                self.logger.error("Claude command timed out - killing process")
+                process.kill()
+                stdout, stderr = process.communicate()
+                if stdout:
+                    self.logger.info(f"Partial STDOUT before timeout:\n{stdout}")
+                if stderr:
+                    self.logger.info(f"Partial STDERR before timeout:\n{stderr}")
+                return False, "Timeout"
                 
         except subprocess.TimeoutExpired:
             self.logger.error("Claude command timed out")
