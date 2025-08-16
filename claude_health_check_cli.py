@@ -63,7 +63,7 @@ class ClaudeCodeHealthCheck:
                 ['npx', 'claude', '--dangerously-skip-permissions', 'Hi'],
                 capture_output=True,
                 text=True,
-                timeout=120,  # Increased timeout for Pi
+                timeout=480,  # 8 minutes timeout for slow Pi
                 shell=True
             )
             self.logger.info(f"Command completed with return code: {result.returncode}")
