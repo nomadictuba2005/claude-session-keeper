@@ -212,7 +212,18 @@ Time: {datetime.now()}
         if not self.daily_reset_time:
             return None
             
-        local_tz = pytz.timezone('US/Pacific')  # Change this to your timezone
+        # Use system's local timezone
+        import time
+        local_tz = pytz.timezone(time.tzname[0]) if hasattr(time, 'tzname') else pytz.UTC
+        try:
+            # Better way to get local timezone
+            local_tz = pytz.timezone(str(datetime.now().astimezone().tzinfo))
+        except:
+            # Fallback to system timezone detection
+            import os
+            tz_name = os.environ.get('TZ') or 'UTC'
+            local_tz = pytz.timezone(tz_name)
+        
         now = datetime.now(local_tz)
         
         # Parse reset time
@@ -230,7 +241,16 @@ Time: {datetime.now()}
     
     def start_scheduler(self, first_run_timestamp=None, resume_from_timestamp=None):
         """Start 5-hour scheduled health checks with optional daily resets"""
-        pst = pytz.timezone('US/Pacific')
+        # Use system's local timezone instead of hardcoded Pacific
+        import time
+        try:
+            local_tz = pytz.timezone(str(datetime.now().astimezone().tzinfo))
+        except:
+            import os
+            tz_name = os.environ.get('TZ') or 'UTC'  
+            local_tz = pytz.timezone(tz_name)
+        
+        pst = local_tz  # Keep variable name for compatibility
         
         # Calculate next daily reset if enabled
         next_daily_reset = self.calculate_next_daily_reset()
