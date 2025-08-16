@@ -13,9 +13,10 @@ from datetime import datetime, timezone
 import pytz
 
 class ClaudeCodeHealthCheck:
-    def __init__(self, webhook_url=None):
+    def __init__(self, webhook_url=None, daily_reset_time=None):
         self.webhook_url = webhook_url
         self.failure_count = 0
+        self.daily_reset_time = daily_reset_time  # Format: "HH:MM" in local time
         
         # Setup logging
         logging.basicConfig(
@@ -206,12 +207,36 @@ Time: {datetime.now()}
             
             return first_run
     
+    def calculate_next_daily_reset(self):
+        """Calculate next daily reset time"""
+        if not self.daily_reset_time:
+            return None
+            
+        local_tz = pytz.timezone('US/Pacific')  # Change this to your timezone
+        now = datetime.now(local_tz)
+        
+        # Parse reset time
+        reset_hour, reset_minute = map(int, self.daily_reset_time.split(':'))
+        
+        # Calculate today's reset time
+        today_reset = now.replace(hour=reset_hour, minute=reset_minute, second=10, microsecond=0)
+        
+        # If today's reset time has passed, schedule for tomorrow
+        if now >= today_reset:
+            from datetime import timedelta
+            today_reset = today_reset + timedelta(days=1)
+            
+        return today_reset
+    
     def start_scheduler(self, first_run_timestamp=None, resume_from_timestamp=None):
-        """Start 5-hour scheduled health checks"""
+        """Start 5-hour scheduled health checks with optional daily resets"""
         pst = pytz.timezone('US/Pacific')
         
         # Calculate first run time
         next_run = self.calculate_next_run_time(first_run_timestamp, resume_from_timestamp)
+        
+        # Calculate next daily reset if enabled
+        next_daily_reset = self.calculate_next_daily_reset()
         
         # Calculate time until first run
         now = datetime.now(pst)
@@ -222,13 +247,46 @@ Time: {datetime.now()}
         
         self.logger.info(f"First health check scheduled for: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         self.logger.info(f"Time until first check: {hours}h {minutes}m {seconds}s")
+        
+        if next_daily_reset:
+            self.logger.info(f"Daily reset enabled at: {self.daily_reset_time} local time")
+            self.logger.info(f"Next daily reset: {next_daily_reset.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        
         self.logger.info("Then every 5 hours after that (based on start time)")
         
         while True:
             now = datetime.now(pst)
             
-            # Check if it's time to run
-            if now >= next_run:
+            # Check if it's time for daily reset (higher priority)
+            if next_daily_reset and now >= next_daily_reset:
+                self.logger.info(f"🔄 DAILY RESET at {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                self.logger.info("Starting fresh Claude Code session for the day")
+                
+                # Save timestamp for resume feature
+                with open('last_run_timestamp.txt', 'w') as f:
+                    f.write(str(int(now.timestamp())))
+                
+                # Run health check
+                thread = threading.Thread(target=self.run_health_check)
+                thread.start()
+                
+                # Reset both timers - next 5-hour cycle starts from daily reset
+                from datetime import timedelta
+                next_run = now + timedelta(hours=5)
+                next_daily_reset = self.calculate_next_daily_reset()
+                
+                # Log new schedule
+                time_until_next = next_run - now
+                hours = int(time_until_next.total_seconds() // 3600)
+                minutes = int((time_until_next.total_seconds() % 3600) // 60)
+                seconds = int(time_until_next.total_seconds() % 60)
+                
+                self.logger.info(f"Next 5-hour check: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                self.logger.info(f"Next daily reset: {next_daily_reset.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                self.logger.info(f"Time until next check: {hours}h {minutes}m {seconds}s")
+                
+            # Check if it's time for regular 5-hour run
+            elif now >= next_run:
                 self.logger.info(f"Running scheduled health check at {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
                 
                 # Save timestamp for resume feature
@@ -287,9 +345,17 @@ if __name__ == "__main__":
             json.dump(sample_config, f, indent=2)
         print(f"Created {config_file} - update webhook_url if needed")
     
+    # Parse daily reset time from args if provided
+    daily_reset_time = None
+    for arg in sys.argv:
+        if arg.startswith("--daily-reset="):
+            daily_reset_time = arg.split("=")[1]
+            break
+    
     # Initialize health checker
     health_checker = ClaudeCodeHealthCheck(
-        webhook_url=config.get('webhook_url')
+        webhook_url=config.get('webhook_url'),
+        daily_reset_time=daily_reset_time
     )
     
     # Check command line arguments
@@ -344,6 +410,8 @@ if __name__ == "__main__":
             print("  python claude_health_check_cli.py --once             # Run once")
             print("  python claude_health_check_cli.py --resume           # Resume from last run")
             print("  python claude_health_check_cli.py --unix-timestamp=<timestamp>  # Start first run at exact time")
+            print("  python claude_health_check_cli.py --daily-reset=HH:MM # Add daily reset at specific time")
+            print("  python claude_health_check_cli.py --unix-timestamp=<timestamp> --daily-reset=09:00  # Combined")
     else:
         print("Starting 24/7 Claude Code health check scheduler...")
         print("Press Ctrl+C to stop")
