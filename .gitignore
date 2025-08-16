@@ -1,0 +1,56 @@
+# Chrome profile data
+chrome_profile/
+
+# Runtime/log files
+*.log
+last_run_timestamp.txt
+
+# Config with real webhook URLs
+config.json
+
+# Old/experimental versions
+claude_health_check.py
+claude_health_check_browser.py
+claude_health_check_simple.py
+claude_health_check_simple_ping.py
+setup_instructions.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Operating System
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
