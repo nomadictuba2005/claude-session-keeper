@@ -59,12 +59,20 @@ class ClaudeCodeHealthCheck:
         try:
             # Use Claude Code CLI to send a simple message
             self.logger.info("Executing: npx claude --dangerously-skip-permissions Hi")
+            
+            # Try different approaches for Pi compatibility
+            import os
+            env = os.environ.copy()
+            env['NODE_ENV'] = 'production'
+            
             result = subprocess.run(
-                ['npx', 'claude', '--dangerously-skip-permissions', 'Hi'],
+                'npx claude --dangerously-skip-permissions Hi',
                 capture_output=True,
                 text=True,
                 timeout=480,  # 8 minutes timeout for slow Pi
-                shell=True
+                shell=True,
+                env=env,
+                cwd=os.path.expanduser('~')
             )
             self.logger.info(f"Command completed with return code: {result.returncode}")
             
