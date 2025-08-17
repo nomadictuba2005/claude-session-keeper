@@ -172,22 +172,22 @@ Time: {datetime.now()}
     
     def calculate_next_run_time(self, first_run_timestamp=None, resume_from_timestamp=None):
         """Calculate when to run next"""
-        pst = pytz.timezone('US/Pacific')
-        now = datetime.now(pst)
+        # Use system's local timezone
+        local_tz = datetime.now().astimezone().tzinfo
+        now = datetime.now(local_tz)
         
         if first_run_timestamp:
             # Start at specific unix timestamp
-            first_run = datetime.fromtimestamp(first_run_timestamp, tz=pst)
+            first_run = datetime.fromtimestamp(first_run_timestamp, tz=local_tz)
             self.logger.info(f"First run scheduled at specified time: {first_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             return first_run
             
         elif resume_from_timestamp:
             # Resume from a specific timestamp (when script was stopped)
-            last_run = datetime.fromtimestamp(resume_from_timestamp, tz=pst)
+            last_run = datetime.fromtimestamp(resume_from_timestamp, tz=local_tz)
             self.logger.info(f"Resuming from last run: {last_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             
             # Calculate next run (5 hours from last run)
-            from datetime import timedelta
             next_run = last_run + timedelta(hours=5)
             
             # If next run is in the past, schedule it now
@@ -197,13 +197,14 @@ Time: {datetime.now()}
             
             return next_run
         else:
-            # First run: Today at 4:01:10 PM PST
+            # First run: Today at 4:01:10 PM local time
             today = now.date()
-            first_run = pst.localize(datetime.combine(today, datetime.strptime("16:01:10", "%H:%M:%S").time()))
+            first_run = now.replace(hour=16, minute=1, second=10, microsecond=0)
+            first_run = first_run.replace(day=today.day, month=today.month, year=today.year)
             
             # If it's already past 4:01:10 PM today, schedule for tomorrow
             if now > first_run:
-                first_run = first_run.replace(day=first_run.day + 1)
+                first_run = first_run + timedelta(days=1)
             
             return first_run
     
@@ -212,19 +213,8 @@ Time: {datetime.now()}
         if not self.daily_reset_time:
             return None
             
-        # Use system's local timezone (same as scheduler)
-        try:
-            local_tz = datetime.now().astimezone().tzinfo
-            if hasattr(local_tz, 'zone'):
-                local_tz = pytz.timezone(local_tz.zone)
-            else:
-                offset = datetime.now() - datetime.utcnow()
-                local_tz = timezone(offset)
-        except:
-            import time
-            offset_seconds = time.timezone if not time.daylight else time.altzone
-            offset_hours = -offset_seconds // 3600
-            local_tz = timezone(timedelta(hours=offset_hours))
+        # Use system's local timezone
+        local_tz = datetime.now().astimezone().tzinfo
         
         now = datetime.now(local_tz)
         
@@ -243,28 +233,17 @@ Time: {datetime.now()}
     
     def start_scheduler(self, first_run_timestamp=None, resume_from_timestamp=None):
         """Start 5-hour scheduled health checks with optional daily resets"""
-        # Use system's local timezone 
+        # Get system's local timezone - works on all systems
         import time
-        try:
-            # Better way to get local timezone
-            from datetime import timezone
-            local_tz = datetime.now().astimezone().tzinfo
-            if hasattr(local_tz, 'zone'):
-                local_tz = pytz.timezone(local_tz.zone)
-            else:
-                # Fallback: calculate offset and create timezone
-                offset = datetime.now() - datetime.utcnow()
-                local_tz = timezone(offset)
-        except:
-            # Final fallback - detect from system
-            import time
-            offset_seconds = time.timezone if not time.daylight else time.altzone
-            offset_hours = -offset_seconds // 3600
-            local_tz = timezone(timedelta(hours=offset_hours))
         
+        # Use system timezone - this works reliably on Linux/Windows/Mac
+        local_tz = datetime.now().astimezone().tzinfo
+        
+        self.logger.info(f"Detected system timezone: {local_tz}")
+        self.logger.info(f"Current local time: {datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        
+        # Use local timezone for all calculations
         pst = local_tz  # Keep variable name for compatibility
-        
-        self.logger.info(f"Using timezone: {local_tz}")
         
         # Calculate next daily reset if enabled
         next_daily_reset = self.calculate_next_daily_reset()
