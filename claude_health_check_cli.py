@@ -9,7 +9,7 @@ import json
 import threading
 import logging
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pytz
 
 class ClaudeCodeHealthCheck:
@@ -212,17 +212,19 @@ Time: {datetime.now()}
         if not self.daily_reset_time:
             return None
             
-        # Use system's local timezone
-        import time
-        local_tz = pytz.timezone(time.tzname[0]) if hasattr(time, 'tzname') else pytz.UTC
+        # Use system's local timezone (same as scheduler)
         try:
-            # Better way to get local timezone
-            local_tz = pytz.timezone(str(datetime.now().astimezone().tzinfo))
+            local_tz = datetime.now().astimezone().tzinfo
+            if hasattr(local_tz, 'zone'):
+                local_tz = pytz.timezone(local_tz.zone)
+            else:
+                offset = datetime.now() - datetime.utcnow()
+                local_tz = timezone(offset)
         except:
-            # Fallback to system timezone detection
-            import os
-            tz_name = os.environ.get('TZ') or 'UTC'
-            local_tz = pytz.timezone(tz_name)
+            import time
+            offset_seconds = time.timezone if not time.daylight else time.altzone
+            offset_hours = -offset_seconds // 3600
+            local_tz = timezone(timedelta(hours=offset_hours))
         
         now = datetime.now(local_tz)
         
@@ -241,16 +243,28 @@ Time: {datetime.now()}
     
     def start_scheduler(self, first_run_timestamp=None, resume_from_timestamp=None):
         """Start 5-hour scheduled health checks with optional daily resets"""
-        # Use system's local timezone instead of hardcoded Pacific
+        # Use system's local timezone 
         import time
         try:
-            local_tz = pytz.timezone(str(datetime.now().astimezone().tzinfo))
+            # Better way to get local timezone
+            from datetime import timezone
+            local_tz = datetime.now().astimezone().tzinfo
+            if hasattr(local_tz, 'zone'):
+                local_tz = pytz.timezone(local_tz.zone)
+            else:
+                # Fallback: calculate offset and create timezone
+                offset = datetime.now() - datetime.utcnow()
+                local_tz = timezone(offset)
         except:
-            import os
-            tz_name = os.environ.get('TZ') or 'UTC'  
-            local_tz = pytz.timezone(tz_name)
+            # Final fallback - detect from system
+            import time
+            offset_seconds = time.timezone if not time.daylight else time.altzone
+            offset_hours = -offset_seconds // 3600
+            local_tz = timezone(timedelta(hours=offset_hours))
         
         pst = local_tz  # Keep variable name for compatibility
+        
+        self.logger.info(f"Using timezone: {local_tz}")
         
         # Calculate next daily reset if enabled
         next_daily_reset = self.calculate_next_daily_reset()
