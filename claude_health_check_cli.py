@@ -74,19 +74,26 @@ class ClaudeCodeHealthCheck:
             self.logger.info("Starting Claude Code process...")
             self.logger.info(f"RAM optimization: Node.js limited to 256MB")
             
-            process = subprocess.Popen(
-                'npx claude --dangerously-skip-permissions Hi',
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                cwd=os.path.expanduser('~'),
-                universal_newlines=True,
-                bufsize=1,
-                preexec_fn=lambda: os.nice(10) if hasattr(os, 'nice') else None  # Lower priority
-            )
-            
+            # Cross-platform process creation with priority handling
+            popen_kwargs = {
+                'shell': True,
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.PIPE,
+                'text': True,
+                'env': env,
+                'cwd': os.path.expanduser('~'),
+                'universal_newlines': True,
+                'bufsize': 1,
+            }
+
+            # Add platform-specific priority control
+            import platform
+            if platform.system() == 'Windows':
+                popen_kwargs['creationflags'] = subprocess.BELOW_NORMAL_PRIORITY_CLASS
+            else:
+                popen_kwargs['preexec_fn'] = lambda: os.nice(10) if hasattr(os, 'nice') else None
+
+            process = subprocess.Popen('npx claude --dangerously-skip-permissions Hi', **popen_kwargs)
             # Log output in real-time
             stdout_lines = []
             stderr_lines = []
