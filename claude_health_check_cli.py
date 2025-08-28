@@ -9,8 +9,22 @@ import json
 import threading
 import logging
 import requests
+import sys
+import os
 from datetime import datetime, timezone, timedelta
 import pytz
+
+# Fix Windows console encoding for Unicode support
+if sys.platform == 'win32':
+    try:
+        # Set console to UTF-8 mode
+        os.system('chcp 65001 > nul')
+        # Enable virtual terminal processing for ANSI escape codes
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    except:
+        pass  # Fallback if console setup fails
 
 class ClaudeCodeHealthCheck:
     def __init__(self, webhook_url=None, daily_reset_time=None):
@@ -23,7 +37,7 @@ class ClaudeCodeHealthCheck:
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler('claude_health_check.log'),
+                logging.FileHandler('claude_health_check.log', encoding='utf-8'),
                 logging.StreamHandler()
             ]
         )
@@ -326,7 +340,7 @@ Time: {datetime.now()}
                     
                     if now > today_reset:
                         # Reset already happened today, show remaining checks
-                        self.logger.info(f"Today's daily reset (08:00) already completed")
+                        self.logger.info(f"Today's daily reset ({self.daily_reset_time}) already completed")
                         remaining_checks = []
                         check_time = today_reset
                         while check_time.date() == current_date:
@@ -339,8 +353,15 @@ Time: {datetime.now()}
                         else:
                             self.logger.info("No more checks today")
                     else:
-                        # Reset coming today
-                        self.logger.info(f"Today's schedule: 08:00 (reset), 13:00, 18:00, 23:00")
+                        # Reset coming today - calculate 5-hour intervals from daily reset time
+                        reset_hour, reset_minute = map(int, self.daily_reset_time.split(':'))
+                        schedule_times = [self.daily_reset_time]
+                        for i in range(1, 4):  # Add next 3 5-hour intervals
+                            next_time = today_reset + timedelta(hours=5*i)
+                            if next_time.date() == current_date:
+                                schedule_times.append(next_time.strftime('%H:%M'))
+                        schedule_str = ', '.join(schedule_times)
+                        self.logger.info(f"Today's schedule: {schedule_str}")
                 else:
                     self.logger.info("Today's schedule: 5-hour intervals continuing from previous cycle")
                 
