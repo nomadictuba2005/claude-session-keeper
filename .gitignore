@@ -4,6 +4,7 @@ chrome_profile/
 # Runtime/log files
 *.log
 last_run_timestamp.txt
+logs.txt
 
 # Config with real webhook URLs
 config.json

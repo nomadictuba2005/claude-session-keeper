@@ -9,8 +9,34 @@ import json
 import threading
 import logging
 import requests
+import sys
+import os
 from datetime import datetime, timezone, timedelta
 import pytz
+
+# Fix Windows console encoding for Unicode support
+if sys.platform == 'win32':
+    try:
+        # Set console to UTF-8 mode
+        os.system('chcp 65001 > nul')
+        # Enable virtual terminal processing for ANSI escape codes
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    except:
+        pass  # Fallback if console setup fails
+
+# Force UTF-8 encoding for stdout and stderr to handle redirection properly
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+if hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 class ClaudeCodeHealthCheck:
     def __init__(self, webhook_url=None, daily_reset_time=None):
@@ -18,17 +44,184 @@ class ClaudeCodeHealthCheck:
         self.failure_count = 0
         self.daily_reset_time = daily_reset_time  # Format: "HH:MM" in local time
         
+        # Check if terminal supports Unicode
+        self.unicode_supported = self._check_unicode_support()
+
+        # Setup logging with Unicode awareness
+        # Create a custom formatter that handles Unicode properly
+        class UnicodeFormatter(logging.Formatter):
+            def format(self, record):
+                # Ensure the message is properly encoded
+                if isinstance(record.msg, str):
+                    # Convert any embedded Unicode escape sequences back to characters
+                    import re
+                    record.msg = re.sub(r'\\U([0-9a-fA-F]{8})', lambda m: chr(int(m.group(1), 16)), record.msg)
+                    record.msg = re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), record.msg)
+                return super().format(record)
+
+        # Configure file handler with UTF-8 and proper formatting
+        import codecs
+        file_handler = logging.FileHandler('claude_health_check.log', encoding='utf-8')
+        # Ensure the file handler uses UTF-8 encoding properly
+        if hasattr(file_handler.stream, 'reconfigure'):
+            try:
+                file_handler.stream.reconfigure(encoding='utf-8')
+            except Exception:
+                pass  # Fallback if reconfigure is not available
+        file_handler.setFormatter(UnicodeFormatter('%(asctime)s - %(levelname)s - %(message)s'))
+
+        # Configure stream handler
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
         # Setup logging
         logging.basicConfig(
             level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler('claude_health_check.log'),
-                logging.StreamHandler()
-            ]
+            handlers=[file_handler, stream_handler]
         )
         self.logger = logging.getLogger(__name__)
-    
+
+        # Test Unicode logging to ensure it works properly
+        self._test_unicode_logging()
+
+    def _test_unicode_logging(self):
+        """Test that Unicode characters log correctly"""
+        try:
+            # Create a test message with Unicode
+            test_msg = f"Unicode test: {self._get_icon('reset')} {self._get_icon('new_day')}"
+            self._safe_log('debug', f"Unicode logging test: {test_msg}")
+        except Exception as e:
+            self._safe_log('warning', f"Unicode logging test failed: {e}")
+
+    def _check_unicode_support(self):
+        """Check if terminal supports Unicode characters"""
+        try:
+            # Test multiple methods to ensure robust detection
+
+            # Method 1: Check stdout encoding
+            if hasattr(sys.stdout, 'encoding') and sys.stdout.encoding:
+                try:
+                    '🔄'.encode(sys.stdout.encoding)
+                    stdout_supports_unicode = True
+                except UnicodeEncodeError:
+                    stdout_supports_unicode = False
+            else:
+                stdout_supports_unicode = False
+
+            # Method 2: Check stderr encoding (for logging)
+            if hasattr(sys.stderr, 'encoding') and sys.stderr.encoding:
+                try:
+                    '🔄'.encode(sys.stderr.encoding)
+                    stderr_supports_unicode = True
+                except UnicodeEncodeError:
+                    stderr_supports_unicode = False
+            else:
+                stderr_supports_unicode = False
+
+            # Method 3: Check environment variables
+            env_supports_unicode = (
+                os.environ.get('LANG', '').endswith('UTF-8') or
+                os.environ.get('LC_ALL', '').endswith('UTF-8') or
+                os.environ.get('LC_CTYPE', '').endswith('UTF-8') or
+                sys.platform == 'win32'  # Windows consoles generally support Unicode now
+            )
+
+            # Method 4: Try to write to a temporary file (fallback)
+            try:
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False) as f:
+                    f.write('🔄')
+                    f.flush()
+                file_supports_unicode = True
+                os.unlink(f.name)
+            except (UnicodeEncodeError, OSError):
+                file_supports_unicode = False
+
+            # Return True if any method indicates Unicode support
+            # Prioritize stdout/stderr support for immediate output
+            if stdout_supports_unicode or stderr_supports_unicode:
+                return True
+            elif env_supports_unicode and file_supports_unicode:
+                return True
+            else:
+                return False
+
+        except Exception:
+            # Conservative fallback - assume no Unicode support if anything fails
+            return False
+    def _recheck_unicode_support(self):
+        """Re-check Unicode support at runtime (useful when output is redirected)"""
+        try:
+            # Allow user to force Unicode via environment variable
+            force_unicode = os.environ.get('CLAUDE_FORCE_UNICODE', '').lower() in ('1', 'true', 'yes')
+
+            if force_unicode:
+                return True
+
+            # Check if we're writing to a file vs terminal
+            is_redirected = not sys.stdout.isatty() or not sys.stderr.isatty()
+
+            if is_redirected:
+                # When output is redirected, prioritize environment settings and platform
+                # This is more reliable than file encoding tests
+                env_supports_unicode = (
+                    os.environ.get('LANG', '').endswith('UTF-8') or
+                    os.environ.get('LC_ALL', '').endswith('UTF-8') or
+                    os.environ.get('LC_CTYPE', '').endswith('UTF-8') or
+                    sys.platform == 'win32'  # Windows consoles generally support Unicode
+                )
+
+                # On modern systems, UTF-8 is widely supported
+                # Be more permissive when output is redirected
+                return env_supports_unicode or sys.platform in ['win32', 'darwin'] or True  # Default to True for modern systems
+            else:
+                # For terminal output, use the original detection
+                return self.unicode_supported
+
+        except Exception:
+            return False
+
+    def _get_icon(self, icon_name):
+        """Get appropriate icon based on Unicode support"""
+        # Use runtime check for better accuracy
+        use_unicode = self._recheck_unicode_support()
+
+        if use_unicode:
+            icons = {
+                'reset': '🔄',
+                'new_day': '📅',
+                'alert': '🚨',
+                'check': '✓',
+                'cross': '✗'
+            }
+        else:
+            icons = {
+                'reset': '[RESET]',
+                'new_day': '[NEW DAY]',
+                'alert': '[ALERT]',
+                'check': '[OK]',
+                'cross': '[FAIL]'
+            }
+        return icons.get(icon_name, '')
+
+    def _safe_log(self, level, message, *args, **kwargs):
+        """Safely log a message ensuring Unicode characters are preserved"""
+        try:
+            # Ensure the message is a proper Unicode string
+            if isinstance(message, str):
+                # Convert any escape sequences back to Unicode characters
+                import re
+                message = re.sub(r'\\U([0-9a-fA-F]{8})', lambda m: chr(int(m.group(1), 16)), message)
+                message = re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), message)
+
+            # Log the message
+            getattr(self.logger, level)(message, *args, **kwargs)
+        except Exception as e:
+            # Fallback to basic logging if Unicode processing fails
+            # Use direct logging to avoid recursion
+            self.logger.warning(f"Unicode logging failed, using fallback: {str(e)}")
+            getattr(self.logger, level)(str(message), *args, **kwargs)
+
     def send_webhook_alert(self, subject, message):
         """Send webhook notification"""
         if not self.webhook_url:
@@ -36,7 +229,7 @@ class ClaudeCodeHealthCheck:
             
         try:
             payload = {
-                "text": f"🚨 {subject}",
+                "text": f"{self._get_icon('alert')} {subject}",
                 "alert": "Claude Code Health Check Alert",
                 "message": message,
                 "timestamp": datetime.now().isoformat()
@@ -74,19 +267,26 @@ class ClaudeCodeHealthCheck:
             self.logger.info("Starting Claude Code process...")
             self.logger.info(f"RAM optimization: Node.js limited to 256MB")
             
-            process = subprocess.Popen(
-                'npx claude --dangerously-skip-permissions Hi',
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                cwd=os.path.expanduser('~'),
-                universal_newlines=True,
-                bufsize=1,
-                preexec_fn=lambda: os.nice(10) if hasattr(os, 'nice') else None  # Lower priority
-            )
-            
+            # Cross-platform process creation with priority handling
+            popen_kwargs = {
+                'shell': True,
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.PIPE,
+                'text': True,
+                'env': env,
+                'cwd': os.path.expanduser('~'),
+                'universal_newlines': True,
+                'bufsize': 1,
+            }
+
+            # Add platform-specific priority control
+            import platform
+            if platform.system() == 'Windows':
+                popen_kwargs['creationflags'] = subprocess.BELOW_NORMAL_PRIORITY_CLASS
+            else:
+                popen_kwargs['preexec_fn'] = lambda: os.nice(10) if hasattr(os, 'nice') else None
+
+            process = subprocess.Popen('npx claude --dangerously-skip-permissions Hi', **popen_kwargs)
             # Log output in real-time
             stdout_lines = []
             stderr_lines = []
@@ -271,16 +471,16 @@ Time: {datetime.now()}
         
         if next_daily_reset and next_run == next_daily_reset:
             # Started with daily reset
-            self.logger.info(f"🔄 First run: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} (daily reset)")
-            self.logger.info(f"Time until first run: {hours}h {minutes}m {seconds}s")
-            
+            self._safe_log('info', f"{self._get_icon('reset')} First run: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} (daily reset)")
+            self._safe_log('info', f"Time until first run: {hours}h {minutes}m {seconds}s")
+
             # Show 5-hour schedule from daily reset
             from datetime import timedelta
             check_times = []
             for i in range(1, 5):  # Show next 4 times
                 check_time = next_daily_reset + timedelta(hours=5*i)
                 check_times.append(check_time.strftime('%H:%M'))
-            self.logger.info(f"Then 5-hour checks: {', '.join(check_times)}")
+            self._safe_log('info', f"Then 5-hour checks: {', '.join(check_times)}")
             
             # Show next daily reset
             next_daily_after = self.calculate_next_daily_reset()
@@ -308,7 +508,7 @@ Time: {datetime.now()}
             # Check if we've crossed midnight and log today's schedule
             current_date = now.date()
             if last_logged_date != current_date:
-                self.logger.info(f"📅 NEW DAY: {current_date.strftime('%A, %B %d, %Y')}")
+                self._safe_log('info', f"{self._get_icon('new_day')} NEW DAY: {current_date.strftime('%A, %B %d, %Y')}")
                 
                 if next_daily_reset:
                     # Show today's schedule with daily reset
@@ -319,7 +519,7 @@ Time: {datetime.now()}
                     
                     if now > today_reset:
                         # Reset already happened today, show remaining checks
-                        self.logger.info(f"Today's daily reset (08:00) already completed")
+                        self.logger.info(f"Today's daily reset ({self.daily_reset_time}) already completed")
                         remaining_checks = []
                         check_time = today_reset
                         while check_time.date() == current_date:
@@ -332,8 +532,15 @@ Time: {datetime.now()}
                         else:
                             self.logger.info("No more checks today")
                     else:
-                        # Reset coming today
-                        self.logger.info(f"Today's schedule: 08:00 (reset), 13:00, 18:00, 23:00")
+                        # Reset coming today - calculate 5-hour intervals from daily reset time
+                        reset_hour, reset_minute = map(int, self.daily_reset_time.split(':'))
+                        schedule_times = [self.daily_reset_time]
+                        for i in range(1, 4):  # Add next 3 5-hour intervals
+                            next_time = today_reset + timedelta(hours=5*i)
+                            if next_time.date() == current_date:
+                                schedule_times.append(next_time.strftime('%H:%M'))
+                        schedule_str = ', '.join(schedule_times)
+                        self.logger.info(f"Today's schedule: {schedule_str}")
                 else:
                     self.logger.info("Today's schedule: 5-hour intervals continuing from previous cycle")
                 
@@ -345,7 +552,7 @@ Time: {datetime.now()}
             
             # If daily reset is closer than 5-hour check, wait for daily reset
             if next_daily_reset and time_to_daily_reset <= time_to_next_run and now >= next_daily_reset:
-                self.logger.info(f"🔄 DAILY RESET at {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                self._safe_log('info', f"{self._get_icon('reset')} DAILY RESET at {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
                 self.logger.info("Daily reset overriding 5-hour schedule - starting fresh session")
                 
                 # Save timestamp for resume feature
@@ -412,17 +619,17 @@ Time: {datetime.now()}
 
 if __name__ == "__main__":
     import sys
-    
+
     # Load config
     config_file = "config.json"
     config = {}
-    
+
     try:
         with open(config_file, 'r') as f:
             config = json.load(f)
     except FileNotFoundError:
         print(f"Config file {config_file} not found. Creating simple config...")
-        
+
         # Create simple config
         sample_config = {
             "webhook_url": "https://webhook.site/cd441013-0fe4-493a-b83e-980bc8c8b1e5"
@@ -430,6 +637,24 @@ if __name__ == "__main__":
         with open(config_file, 'w') as f:
             json.dump(sample_config, f, indent=2)
         print(f"Created {config_file} - update webhook_url if needed")
+
+    # Test Unicode support before initializing
+    if len(sys.argv) > 1 and sys.argv[1] == "--test-unicode":
+        test_checker = ClaudeCodeHealthCheck()
+        runtime_unicode = test_checker._recheck_unicode_support()
+        print(f"Constructor Unicode support: {test_checker.unicode_supported}")
+        print(f"Runtime Unicode support: {runtime_unicode}")
+        print(f"Output redirected: {not sys.stdout.isatty() or not sys.stderr.isatty()}")
+        print(f"stdout encoding: {getattr(sys.stdout, 'encoding', 'None')}")
+        print(f"stderr encoding: {getattr(sys.stderr, 'encoding', 'None')}")
+        print()
+        print("Icons with current settings:")
+        print(f"Reset icon: '{test_checker._get_icon('reset')}'")
+        print(f"New day icon: '{test_checker._get_icon('new_day')}'")
+        print(f"Alert icon: '{test_checker._get_icon('alert')}'")
+        print(f"Check icon: '{test_checker._get_icon('check')}'")
+        print(f"Cross icon: '{test_checker._get_icon('cross')}'")
+        sys.exit(0)
     
     # Parse daily reset time from args if provided
     daily_reset_time = None
@@ -450,9 +675,9 @@ if __name__ == "__main__":
             print("Running single health check...")
             success = health_checker.run_health_check()
             if success:
-                print("✓ Health check completed successfully!")
+                print(f"{health_checker._get_icon('check')} Health check completed successfully!")
             else:
-                print("✗ Health check failed. Check claude_health_check.log")
+                print(f"{health_checker._get_icon('cross')} Health check failed. Check claude_health_check.log")
             sys.exit(0)
         
         elif sys.argv[1] == "--resume":
@@ -507,6 +732,7 @@ if __name__ == "__main__":
             print("  python claude_health_check_cli.py                    # Start fresh (4:01:10 PM PST)")
             print("  python claude_health_check_cli.py --once             # Run once")
             print("  python claude_health_check_cli.py --resume           # Resume from last run")
+            print("  python claude_health_check_cli.py --test-unicode     # Test Unicode support")
             print("  python claude_health_check_cli.py --unix-timestamp=<timestamp>  # Start first run at exact time")
             print("  python claude_health_check_cli.py --daily-reset=HH:MM # Add daily reset at specific time")
             print("  python claude_health_check_cli.py --unix-timestamp=<timestamp> --daily-reset=09:00  # Combined")
