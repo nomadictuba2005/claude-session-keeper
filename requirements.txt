@@ -1,2 +1,16 @@
+# Core dependencies
 requests==2.31.0
 pytz==2023.3
+
+# Web dashboard (optional - for --web mode)
+flask>=2.3.0
+
+# Note: The following are optional and used for enhanced features
+# - sqlite3: Built-in Python (for session statistics)
+# - dataclasses: Built-in Python 3.7+ (for profiles)
+# - argparse: Built-in Python (for CLI)
+
+# Platform-specific (optional - for desktop notifications):
+# Windows: pip install win10toast
+# Linux: notify-send (usually pre-installed)
+# macOS: osascript (built-in)

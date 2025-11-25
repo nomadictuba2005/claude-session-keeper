@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Claude Code CLI Health Check
-Simple health check using Claude Code CLI commands
+Advanced health check and session management for Claude Code CLI
+Features: Statistics tracking, Web dashboard, Interactive CLI, Multi-channel notifications
 """
 import subprocess
 import time
@@ -9,15 +10,39 @@ import json
 import threading
 import logging
 import requests
+import argparse
+import signal
+import sys
 from datetime import datetime, timezone, timedelta
 import pytz
 
+# Import advanced features (graceful fallback if not available)
+try:
+    from session_stats import SessionStats
+    STATS_AVAILABLE = True
+except ImportError:
+    STATS_AVAILABLE = False
+
+try:
+    from notifications import NotificationManager, NotificationLevel
+    NOTIFICATIONS_AVAILABLE = True
+except ImportError:
+    NOTIFICATIONS_AVAILABLE = False
+
+try:
+    from profiles import ProfileManager
+    PROFILES_AVAILABLE = True
+except ImportError:
+    PROFILES_AVAILABLE = False
+
+
 class ClaudeCodeHealthCheck:
-    def __init__(self, webhook_url=None, daily_reset_time=None):
+    def __init__(self, webhook_url=None, daily_reset_time=None, enable_stats=True):
         self.webhook_url = webhook_url
         self.failure_count = 0
         self.daily_reset_time = daily_reset_time  # Format: "HH:MM" in local time
-        
+        self.running = True
+
         # Setup logging
         logging.basicConfig(
             level=logging.INFO,
@@ -28,6 +53,20 @@ class ClaudeCodeHealthCheck:
             ]
         )
         self.logger = logging.getLogger(__name__)
+
+        # Initialize advanced features
+        self.stats = SessionStats() if STATS_AVAILABLE and enable_stats else None
+        self.notifications = NotificationManager() if NOTIFICATIONS_AVAILABLE else None
+        self.profiles = ProfileManager() if PROFILES_AVAILABLE else None
+
+        # Signal handling for graceful shutdown
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+
+    def _signal_handler(self, signum, frame):
+        """Handle shutdown signals gracefully"""
+        self.logger.info("Shutdown signal received, stopping...")
+        self.running = False
     
     def send_webhook_alert(self, subject, message):
         """Send webhook notification"""
@@ -135,19 +174,39 @@ class ClaudeCodeHealthCheck:
             self.logger.error(f"Error running Claude command: {e}")
             return False, str(e)
     
-    def run_health_check(self):
+    def run_health_check(self, session_type="scheduled"):
         """Run complete health check"""
         self.logger.info("Starting Claude Code CLI health check...")
-        
+
+        start_time = time.time()
         success, response = self.run_claude_command("Hi")
-        
+        response_time = time.time() - start_time
+
+        # Record statistics if available
+        if self.stats:
+            self.stats.record_session(
+                success=success,
+                response_time=response_time,
+                error_message=None if success else response,
+                session_type=session_type,
+                response_preview=response[:200] if success and response else None
+            )
+
         if success:
             self.failure_count = 0
-            self.logger.info(f"Health check completed successfully. Response: {response}")
+            self.logger.info(f"Health check completed successfully in {response_time:.2f}s")
+
+            # Send success notification if configured
+            if self.notifications:
+                self.notifications.notify_health_check_result(
+                    success=True,
+                    response_time=response_time
+                )
+
             return True
         else:
             self.failure_count += 1
-            
+
             # Alert after 3 consecutive failures
             if self.failure_count >= 3:
                 alert_msg = f"""
@@ -166,7 +225,15 @@ Please check:
 Time: {datetime.now()}
 """
                 self.send_webhook_alert("Claude Code CLI Issues", alert_msg)
-            
+
+                # Also send via new notification system
+                if self.notifications:
+                    self.notifications.notify_health_check_result(
+                        success=False,
+                        error=response,
+                        consecutive_failures=self.failure_count
+                    )
+
             self.logger.error(f"Health check failed: {response}")
             return False
     
@@ -302,7 +369,7 @@ Time: {datetime.now()}
         
         last_logged_date = None
         
-        while True:
+        while self.running:
             now = datetime.now(pst)
             
             # Check if we've crossed midnight and log today's schedule
@@ -410,110 +477,247 @@ Time: {datetime.now()}
             # Check every 10 seconds for precise timing
             time.sleep(10)
 
-if __name__ == "__main__":
-    import sys
-    
+def print_banner():
+    """Print application banner"""
+    print("""
+╔═══════════════════════════════════════════════════════════╗
+║           Claude Session Keeper v2.0                      ║
+║   Advanced health check & session management for Claude   ║
+╚═══════════════════════════════════════════════════════════╝
+""")
+
+
+def create_parser():
+    """Create argument parser with all options"""
+    parser = argparse.ArgumentParser(
+        description='Claude Session Keeper - Advanced health check and session management',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                           Start fresh scheduler (4:01:10 PM)
+  %(prog)s --once                    Run single health check
+  %(prog)s --interactive             Launch interactive menu
+  %(prog)s --web                     Start web dashboard (port 5000)
+  %(prog)s --web --port 8080         Start web dashboard on port 8080
+  %(prog)s --profile morning         Use 'morning' schedule profile
+  %(prog)s --daily-reset 08:00       Add daily reset at 8 AM
+  %(prog)s --stats                   Show session statistics
+        """
+    )
+
+    # Mode selection
+    mode_group = parser.add_argument_group('Mode Selection')
+    mode_group.add_argument('--once', action='store_true',
+                           help='Run a single health check and exit')
+    mode_group.add_argument('--interactive', '-i', action='store_true',
+                           help='Launch interactive terminal menu')
+    mode_group.add_argument('--web', '-w', action='store_true',
+                           help='Start web dashboard')
+    mode_group.add_argument('--resume', action='store_true',
+                           help='Resume from last saved timestamp')
+
+    # Schedule options
+    schedule_group = parser.add_argument_group('Schedule Options')
+    schedule_group.add_argument('--unix-timestamp', type=int,
+                               help='Start first run at specific Unix timestamp')
+    schedule_group.add_argument('--daily-reset', type=str, metavar='HH:MM',
+                               help='Add daily reset at specific time (e.g., 08:00)')
+    schedule_group.add_argument('--profile', '-p', type=str,
+                               help='Use a specific schedule profile')
+
+    # Web options
+    web_group = parser.add_argument_group('Web Dashboard Options')
+    web_group.add_argument('--port', type=int, default=5000,
+                          help='Web dashboard port (default: 5000)')
+    web_group.add_argument('--host', type=str, default='0.0.0.0',
+                          help='Web dashboard host (default: 0.0.0.0)')
+
+    # Information
+    info_group = parser.add_argument_group('Information')
+    info_group.add_argument('--stats', action='store_true',
+                           help='Display session statistics')
+    info_group.add_argument('--list-profiles', action='store_true',
+                           help='List available schedule profiles')
+
+    return parser
+
+
+def show_stats():
+    """Display session statistics"""
+    if not STATS_AVAILABLE:
+        print("Statistics module not available.")
+        return
+
+    stats = SessionStats()
+    overall = stats.get_overall_stats()
+    today = stats.get_today_stats()
+    summary = stats.get_status_summary()
+
+    print("\n" + "=" * 50)
+    print("SESSION STATISTICS")
+    print("=" * 50)
+
+    print("\n--- Today ---")
+    print(f"  Checks: {today['total_checks']}")
+    print(f"  Successful: {today['successful']}")
+    print(f"  Failed: {today['failed']}")
+    print(f"  Uptime: {today['uptime_percentage']:.1f}%")
+
+    print("\n--- Overall ---")
+    print(f"  Total Sessions: {overall['total_sessions']}")
+    print(f"  Success Rate: {overall['success_rate']:.1f}%")
+    print(f"  Current Streak: {overall['current_success_streak']} successes")
+    if overall['avg_response_time']:
+        print(f"  Avg Response Time: {overall['avg_response_time']:.2f}s")
+
+    print("\n--- Last Check ---")
+    print(f"  Time: {summary['last_check'] or 'Never'}")
+    print(f"  Status: {summary['last_status']}")
+
+    print()
+
+
+def list_profiles():
+    """List available schedule profiles"""
+    if not PROFILES_AVAILABLE:
+        print("Profiles module not available.")
+        return
+
+    pm = ProfileManager()
+    profiles = pm.list_profiles()
+
+    print("\n" + "=" * 50)
+    print("SCHEDULE PROFILES")
+    print("=" * 50)
+
+    for p in profiles:
+        active_mark = " [ACTIVE]" if p['active'] else ""
+        print(f"\n  {p['name']}{active_mark}")
+        print(f"    Description: {p['description']}")
+        print(f"    Daily Reset: {p['daily_reset'] or 'None'}")
+        print(f"    First Run: {p['first_run'] or 'Default'}")
+
+    print()
+
+
+def main():
+    """Main entry point"""
+    parser = create_parser()
+    args = parser.parse_args()
+
     # Load config
     config_file = "config.json"
     config = {}
-    
+
     try:
         with open(config_file, 'r') as f:
             config = json.load(f)
     except FileNotFoundError:
-        print(f"Config file {config_file} not found. Creating simple config...")
-        
-        # Create simple config
         sample_config = {
-            "webhook_url": "https://webhook.site/cd441013-0fe4-493a-b83e-980bc8c8b1e5"
+            "webhook_url": ""
         }
         with open(config_file, 'w') as f:
             json.dump(sample_config, f, indent=2)
-        print(f"Created {config_file} - update webhook_url if needed")
-    
-    # Parse daily reset time from args if provided
-    daily_reset_time = None
-    for arg in sys.argv:
-        if arg.startswith("--daily-reset="):
-            daily_reset_time = arg.split("=")[1]
-            break
-    
+
+    # Information modes (no scheduler needed)
+    if args.stats:
+        show_stats()
+        return
+
+    if args.list_profiles:
+        list_profiles()
+        return
+
+    # Get daily reset time from profile or args
+    daily_reset_time = args.daily_reset
+    first_run_timestamp = args.unix_timestamp
+
+    # Load profile if specified
+    if args.profile and PROFILES_AVAILABLE:
+        pm = ProfileManager()
+        pm.set_active_profile(args.profile)
+        profile = pm.get_profile(args.profile)
+        if profile:
+            daily_reset_time = daily_reset_time or profile.daily_reset_time
+            first_run_timestamp = first_run_timestamp or profile.unix_timestamp
+            print(f"Using profile: {profile.name}")
+        else:
+            print(f"Profile '{args.profile}' not found. Use --list-profiles to see available profiles.")
+            return
+
     # Initialize health checker
     health_checker = ClaudeCodeHealthCheck(
         webhook_url=config.get('webhook_url'),
         daily_reset_time=daily_reset_time
     )
-    
-    # Check command line arguments
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--once":
-            print("Running single health check...")
-            success = health_checker.run_health_check()
-            if success:
-                print("✓ Health check completed successfully!")
-            else:
-                print("✗ Health check failed. Check claude_health_check.log")
-            sys.exit(0)
-        
-        elif sys.argv[1] == "--resume":
-            # Resume from last saved timestamp
-            try:
-                with open('last_run_timestamp.txt', 'r') as f:
-                    timestamp = int(f.read().strip())
-                print(f"Resuming from timestamp: {timestamp}")
-                print("Starting 24/7 Claude Code health check scheduler...")
-                print("Press Ctrl+C to stop")
-                try:
-                    health_checker.start_scheduler(resume_from_timestamp=timestamp)
-                except KeyboardInterrupt:
-                    print("\nHealth check scheduler stopped")
-            except FileNotFoundError:
-                print("No previous run found. Starting fresh.")
-                print("Starting 24/7 Claude Code health check scheduler...")
-                print("Press Ctrl+C to stop")
-                try:
-                    health_checker.start_scheduler()
-                except KeyboardInterrupt:
-                    print("\nHealth check scheduler stopped")
-        
-        elif sys.argv[1].startswith("--unix-timestamp="):
-            # Start first run at specific timestamp
-            timestamp = int(sys.argv[1].split("=")[1])
-            pst = pytz.timezone('US/Pacific')
-            scheduled_time = datetime.fromtimestamp(timestamp, tz=pst)
-            print(f"Starting first run at unix timestamp: {timestamp}")
-            print(f"That's: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            if daily_reset_time:
-                print(f"With daily reset at: {daily_reset_time}")
-            print("Starting 24/7 Claude Code health check scheduler...")
-            print("Press Ctrl+C to stop")
-            try:
-                health_checker.start_scheduler(first_run_timestamp=timestamp)
-            except KeyboardInterrupt:
-                print("\nHealth check scheduler stopped")
-        
-        elif sys.argv[1].startswith("--daily-reset="):
-            # Just daily reset, start immediately with default schedule
-            print(f"Starting with daily reset at: {daily_reset_time}")
-            print("Starting 24/7 Claude Code health check scheduler...")
-            print("Press Ctrl+C to stop")
-            try:
-                health_checker.start_scheduler()
-            except KeyboardInterrupt:
-                print("\nHealth check scheduler stopped")
-        
-        else:
-            print("Usage:")
-            print("  python claude_health_check_cli.py                    # Start fresh (4:01:10 PM PST)")
-            print("  python claude_health_check_cli.py --once             # Run once")
-            print("  python claude_health_check_cli.py --resume           # Resume from last run")
-            print("  python claude_health_check_cli.py --unix-timestamp=<timestamp>  # Start first run at exact time")
-            print("  python claude_health_check_cli.py --daily-reset=HH:MM # Add daily reset at specific time")
-            print("  python claude_health_check_cli.py --unix-timestamp=<timestamp> --daily-reset=09:00  # Combined")
-    else:
-        print("Starting 24/7 Claude Code health check scheduler...")
-        print("Press Ctrl+C to stop")
+
+    # Interactive mode
+    if args.interactive:
         try:
+            from interactive_cli import run_interactive_mode
+            print_banner()
+            run_interactive_mode(health_checker)
+        except ImportError:
+            print("Interactive CLI module not available.")
+            print("Make sure interactive_cli.py is in the same directory.")
+        return
+
+    # Web dashboard mode
+    if args.web:
+        try:
+            from web_dashboard import run_server, set_health_checker
+            print_banner()
+            print(f"Starting web dashboard at http://{args.host}:{args.port}")
+            print("Press Ctrl+C to stop\n")
+            set_health_checker(health_checker)
+            run_server(host=args.host, port=args.port)
+        except ImportError:
+            print("Web dashboard module not available.")
+            print("Make sure web_dashboard.py is in the same directory and Flask is installed.")
+            print("Install Flask with: pip install flask")
+        return
+
+    # Single check mode
+    if args.once:
+        print_banner()
+        print("Running single health check...")
+        success = health_checker.run_health_check(session_type="manual")
+        if success:
+            print("✓ Health check completed successfully!")
+        else:
+            print("✗ Health check failed. Check claude_health_check.log")
+        return
+
+    # Resume mode
+    if args.resume:
+        print_banner()
+        try:
+            with open('last_run_timestamp.txt', 'r') as f:
+                timestamp = int(f.read().strip())
+            print(f"Resuming from timestamp: {timestamp}")
+            print("Starting 24/7 Claude Code health check scheduler...")
+            print("Press Ctrl+C to stop")
+            health_checker.start_scheduler(resume_from_timestamp=timestamp)
+        except FileNotFoundError:
+            print("No previous run found. Starting fresh.")
+            print("Starting 24/7 Claude Code health check scheduler...")
+            print("Press Ctrl+C to stop")
             health_checker.start_scheduler()
-        except KeyboardInterrupt:
-            print("\nHealth check scheduler stopped")
+        return
+
+    # Default: Start scheduler
+    print_banner()
+    print("Starting 24/7 Claude Code health check scheduler...")
+    if daily_reset_time:
+        print(f"Daily reset at: {daily_reset_time}")
+    if first_run_timestamp:
+        local_tz = datetime.now().astimezone().tzinfo
+        scheduled_time = datetime.fromtimestamp(first_run_timestamp, tz=local_tz)
+        print(f"First run at: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    print("Press Ctrl+C to stop\n")
+
+    health_checker.start_scheduler(first_run_timestamp=first_run_timestamp)
+
+
+if __name__ == "__main__":
+    main()
