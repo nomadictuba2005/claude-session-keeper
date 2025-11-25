@@ -1,362 +1,434 @@
-# Claude Session Keeper
+# Claude Session Keeper v2.0
 
-🤖 **Automatically optimize your Claude Code session timing with intelligent scheduling and daily resets.**
+**Automatically optimize your Claude Code session timing with intelligent scheduling, web dashboard, and multi-channel notifications.**
 
-## What It Does
+[![Python 3.7+](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Claude Code uses **fixed 5-hour session windows** that start with your first message. This script gives you complete control over when those windows begin:
+## One-Line Installation
 
-- ✅ **5-Hour Session Optimization** - Control exactly when your Claude Code sessions start
-- ✅ **Daily Reset Feature** - Fresh sessions every day at your preferred time  
-- ✅ **Smart Scheduling** - Never waste sessions on random timing
-- ✅ **Minimal Resource Usage** - 1 message per window vs 10-800 limit
-- ✅ **24/7 Operation** - Perfect for Raspberry Pi or always-on systems
-- ✅ **Automatic Timezone Detection** - Works anywhere in the world
-
-## How Claude Code Sessions Work
-
-Claude Code limits work with **fixed 5-hour windows**:
-1. Window starts with your **first message** 
-2. Once you hit your limit (10-800 messages), you're locked out
-3. Window expires exactly **5 hours after the first message**
-4. **This script controls when that first message happens** 🎯
-
-**Without this script:** Random session timing based on when you happen to use Claude  
-**With this script:** Predictable, optimized sessions that align with your schedule
-
-## 🚀 Features
-
-### ⏰ Precise Timing Control
-- **Unix timestamp scheduling** - Start at exact moments
-- **Resume functionality** - Pick up where you left off after restarts
-- **Smart conflict resolution** - Daily resets override 5-hour schedules
-
-### 🌅 Daily Reset Feature  
-- **Fresh sessions every day** at your chosen time (e.g., 8:00 AM)
-- **Automatic schedule adjustment** - 5-hour cycles restart from daily reset
-- **Work-day optimization** - Clean slate every morning
-
-### 🔍 Comprehensive Monitoring
-- **Real-time logging** - See exactly what Claude Code is doing
-- **Daily schedule display** - Know today's planned check times
-- **Countdown timers** - Track time until next session
-- **Failure detection** - Optional webhook alerts when things break
-
-### 🛠️ System Optimizations
-- **RAM optimizations** - Limits Node.js memory usage (perfect for Pi 3B)
-- **Process priority management** - Runs at lower priority to avoid system impact
-- **Telemetry disabled** - No unnecessary data transmission
-
-## Requirements
-
-- **Claude Code CLI** installed and logged in
-- **Python 3.7+** with pip
-- **Node.js 18+** (for Claude Code)
-- **Linux/macOS/Windows** (optimized for Raspberry Pi)
-
-## Installation
-
-### 1. Install Claude Code
+### Linux / macOS
 ```bash
-# Install Node.js 20 (LTS)
+curl -fsSL https://raw.githubusercontent.com/nomadictuba2005/claude-session-keeper/main/install.sh | bash
+```
+
+### Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/nomadictuba2005/claude-session-keeper/main/install.ps1 | iex
+```
+
+### pip Install
+```bash
+pip install git+https://github.com/nomadictuba2005/claude-session-keeper.git
+```
+
+**That's it!** After installation, use `csk` or `claude-session-keeper` from anywhere.
+
+---
+
+## Quick Start
+
+```bash
+# Launch interactive menu (easiest way to start)
+csk --interactive
+
+# Or start the web dashboard
+csk --web
+
+# Run a single health check
+csk --once
+
+# View statistics
+csk --stats
+```
+
+---
+
+## What's New in v2.0
+
+| Feature | Description |
+|---------|-------------|
+| **Web Dashboard** | Beautiful dark-themed UI with live status |
+| **Interactive CLI** | Menu-driven terminal interface |
+| **Statistics Tracking** | SQLite-powered session history and analytics |
+| **Multi-Channel Notifications** | Discord, Slack, webhooks, desktop alerts |
+| **Schedule Profiles** | Pre-built & custom profiles (morning, evening, etc.) |
+| **REST API** | Programmatic control and monitoring |
+| **One-Line Install** | Auto path setup, works immediately |
+
+---
+
+## Features
+
+### Web Dashboard (`csk --web`)
+
+Access at `http://localhost:5000`:
+- Real-time status cards (today's checks, uptime, streaks)
+- Recent session history
+- Quick action buttons
+- Profile management
+- Auto-refresh every 30 seconds
+
+![Web Dashboard Preview](https://via.placeholder.com/800x400?text=Web+Dashboard)
+
+### Interactive Menu (`csk --interactive`)
+
+Full-featured terminal UI:
+- Run health checks
+- Start/stop scheduler
+- View detailed statistics
+- Manage profiles
+- Configure notifications
+- Export data
+
+### Schedule Profiles
+
+Pre-built profiles for common use cases:
+
+| Profile | Daily Reset | Description |
+|---------|-------------|-------------|
+| `morning` | 08:00 | Fresh sessions each morning |
+| `afternoon` | - | Default 4:01 PM start |
+| `evening` | 18:00 | Evening schedule |
+| `night-owl` | 22:00 | Late night workers |
+| `always-on` | - | Continuous 5-hour cycles |
+
+```bash
+# Use a profile
+csk --profile morning
+
+# List all profiles
+csk --list-profiles
+```
+
+### Multi-Channel Notifications
+
+Get alerts via:
+- **Discord** - Rich embeds with colors
+- **Slack** - Formatted block messages
+- **Generic Webhooks** - JSON payloads
+- **Desktop** - Native OS notifications
+
+Configure in the interactive menu or edit `notifications_config.json`.
+
+### REST API
+
+```bash
+GET  /api/status          # Current status
+GET  /api/stats           # All statistics
+GET  /api/sessions        # Recent sessions
+GET  /api/profiles        # List profiles
+POST /api/check           # Run health check
+POST /api/scheduler/start # Start scheduler
+POST /api/scheduler/stop  # Stop scheduler
+```
+
+---
+
+## All Commands
+
+```bash
+# Modes
+csk --interactive        # Interactive terminal menu
+csk --web               # Web dashboard (default port 5000)
+csk --web --port 8080   # Web on custom port
+csk --once              # Single health check
+csk --resume            # Resume from last run
+
+# Scheduling
+csk --profile morning           # Use schedule profile
+csk --daily-reset 08:00         # Daily reset at 8 AM
+csk --unix-timestamp 1755316870 # Start at exact time
+
+# Information
+csk --stats             # View statistics
+csk --list-profiles     # List available profiles
+csk --help              # Full help
+```
+
+---
+
+## Installation Options
+
+### Option 1: One-Line Install (Recommended)
+
+**Linux/macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/nomadictuba2005/claude-session-keeper/main/install.sh | bash
+```
+
+**Windows PowerShell:**
+```powershell
+irm https://raw.githubusercontent.com/nomadictuba2005/claude-session-keeper/main/install.ps1 | iex
+```
+
+This will:
+- Download all files to `~/.claude-session-keeper`
+- Install Python dependencies
+- Add `csk` and `claude-session-keeper` to your PATH
+- Create default configuration
+
+### Option 2: pip Install
+
+```bash
+# Basic install
+pip install git+https://github.com/nomadictuba2005/claude-session-keeper.git
+
+# With web dashboard support
+pip install "claude-session-keeper[web] @ git+https://github.com/nomadictuba2005/claude-session-keeper.git"
+```
+
+### Option 3: Manual Install
+
+```bash
+# Clone repository
+git clone https://github.com/nomadictuba2005/claude-session-keeper.git
+cd claude-session-keeper
+
+# Install with make
+make install
+
+# Or manually
+pip install -r requirements.txt
+python claude_health_check_cli.py --help
+```
+
+### Option 4: Docker (Coming Soon)
+
+```bash
+docker run -d --name csk nomadictuba2005/claude-session-keeper
+```
+
+---
+
+## Prerequisites
+
+Before using Claude Session Keeper, you need:
+
+### 1. Claude Code CLI
+```bash
+# Install Node.js 18+ if needed
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 
-# Install Claude Code globally
+# Install Claude Code
 npm install -g @anthropic-ai/claude-code
 
-# Login to your Anthropic account
+# Login (one-time)
 claude login
 ```
 
-### 2. Install Session Keeper
+### 2. Python 3.7+
+Most systems have this pre-installed. Check with:
 ```bash
-# Clone this repository
-git clone https://github.com/awesomecoolraj/claude-session-keeper.git
-cd claude-session-keeper
-
-# Create virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
+python3 --version
 ```
 
-### 3. Test Installation
-```bash
-# Quick test to verify everything works
-python claude_health_check_cli.py --once
-```
+---
 
-## 📖 Usage Guide
+## Configuration
 
-### Basic Commands
+### Webhook Alerts
 
-#### Single Test Run
-```bash
-python claude_health_check_cli.py --once
-```
-**Use case:** Test that Claude Code is working and accessible
-
-#### Start with Default Schedule  
-```bash
-python claude_health_check_cli.py
-```
-**Use case:** Begin 5-hour cycles starting at 4:01:10 PM (in your timezone)
-
-#### Start at Specific Time
-```bash
-python claude_health_check_cli.py --unix-timestamp=1755316870
-```
-**Use case:** Control exactly when your first session begins
-
-### Advanced Features
-
-#### Daily Reset (Recommended)
-```bash
-python claude_health_check_cli.py --daily-reset=08:00
-```
-**What happens:**
-- 8:00 AM → Fresh session starts (daily reset)
-- 1:00 PM → 5-hour check 
-- 6:00 PM → 5-hour check
-- 11:00 PM → 5-hour check  
-- 4:00 AM → 5-hour check
-- 8:00 AM → Daily reset (cycle repeats)
-
-#### Combined Scheduling
-```bash
-python claude_health_check_cli.py --unix-timestamp=1755316870 --daily-reset=08:00
-```
-**Use case:** Start immediately at specific time, then daily resets at 8:00 AM
-
-#### Resume After Restart
-```bash
-python claude_health_check_cli.py --resume
-```
-**Use case:** Continue from where you left off after system reboot
-
-### 24/7 Operation
-
-#### Run in Background
-```bash
-# Start in background with output logging
-nohup python claude_health_check_cli.py --daily-reset=08:00 > health_check.out 2>&1 &
-```
-
-#### Auto-start on Boot
-```bash
-# Add to crontab for automatic startup
-crontab -e
-
-# Add this line:
-@reboot cd /path/to/claude-session-keeper && source venv/bin/activate && nohup python claude_health_check_cli.py --resume > health_check.out 2>&1 &
-```
-
-## ⚙️ Configuration
-
-### Optional Webhook Alerts
-Create `config.json` for failure notifications:
+Edit `config.json`:
 ```json
 {
   "webhook_url": "https://webhook.site/your-unique-id"
 }
 ```
 
-**Setup webhook:**
-1. Visit [webhook.site](https://webhook.site) (free, no signup)
-2. Copy your unique URL
-3. Add to config.json
-4. Get notified when Claude Code has issues
+### Notification Channels
 
-### Timezone Handling
-The script automatically detects your system timezone. Daily reset times are in **your local time**, not UTC or Pacific.
-
-## 📊 Examples & Use Cases
-
-### Example 1: Developer Workflow
-```bash
-python claude_health_check_cli.py --daily-reset=09:00
-```
-**Perfect for:** Starting each work day with a fresh Claude session at 9:00 AM
-
-### Example 2: Always-On Monitoring  
-```bash
-python claude_health_check_cli.py --unix-timestamp=1755316870
-```
-**Perfect for:** Precise session timing without daily resets
-
-### Example 3: Raspberry Pi 24/7
-```bash
-nohup python claude_health_check_cli.py --daily-reset=08:00 > logs.txt 2>&1 &
-```
-**Perfect for:** Set-and-forget operation on low-power devices
-
-## 🔧 System Requirements & Optimization
-
-### Minimum Hardware
-- **RAM:** 512MB (1GB+ recommended)  
-- **CPU:** Any ARM/x64 processor
-- **Storage:** 100MB for installation
-- **Network:** Stable internet connection
-
-### Raspberry Pi Optimization
-The script includes several optimizations for low-power devices:
-- **Node.js memory limit:** 256MB (prevents crashes)
-- **Reduced thread pool:** Minimizes CPU usage  
-- **Disabled telemetry:** Saves bandwidth and processing
-- **Lower process priority:** Won't interfere with other tasks
-
-### Power Consumption
-**Raspberry Pi 3B:** ~$0.26/month in electricity
-- Active for ~5 seconds every 5 hours
-- 99.97% idle time
-- Extremely efficient operation
-
-## 📋 Command Reference
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `--once` | Run single test | `python claude_health_check_cli.py --once` |
-| `--unix-timestamp=X` | Start at specific time | `--unix-timestamp=1755316870` |
-| `--daily-reset=HH:MM` | Daily reset at time | `--daily-reset=08:00` |
-| `--resume` | Resume from last run | `python claude_health_check_cli.py --resume` |
-| (no args) | Default schedule | Starts at 4:01:10 PM |
-
-### Combining Commands
-You can combine most commands:
-```bash
-python claude_health_check_cli.py --unix-timestamp=1755316870 --daily-reset=09:00
+Edit `notifications_config.json` or use the interactive menu:
+```json
+{
+  "channels": [
+    {
+      "name": "Discord",
+      "channel_type": "discord",
+      "webhook_url": "https://discord.com/api/webhooks/...",
+      "enabled": true,
+      "notify_on_failure": true,
+      "notify_on_success": false
+    }
+  ]
+}
 ```
 
-## 🔍 Monitoring & Logs
+### Custom Profiles
 
-### Log Output
-The script provides detailed logging:
-```
-2025-08-16 08:00:10 - INFO - 🔄 DAILY RESET - starting fresh session
-2025-08-16 08:00:15 - INFO - Claude responded: Hi! How can I help you today?
-2025-08-16 08:00:15 - INFO - Health check completed successfully
-2025-08-16 08:00:16 - INFO - Next check: 2025-08-16 13:00:10 
-2025-08-16 08:00:16 - INFO - Time until next check: 5h 0m 0s
-```
-
-### Daily Schedule Display
-```
-📅 NEW DAY: Saturday, August 17, 2025
-Today's schedule: 08:00 (reset), 13:00, 18:00, 23:00
-```
-
-### Failure Detection
-When Claude Code has issues:
-```
-2025-08-16 08:00:10 - ERROR - Claude command timed out
-2025-08-16 08:00:10 - ERROR - Health check failed: Timeout
-```
-
-## ❓ FAQ
-
-### Is this allowed by Anthropic?
-**Yes!** This script:
-- Uses Claude Code's official CLI as intended
-- Doesn't exceed rate limits (uses 1 of 10-800 messages)  
-- Simply optimizes timing, not circumventing restrictions
-- Claude Code has headless mode designed for automation
-
-### Will this use up my Claude quota?
-**Minimal impact!** 
-- Uses 1 message per 5-hour window
-- That's ~4-5 messages per day  
-- Vs. your 10-800 message limit per window
-
-### Can I run this on multiple devices?
-**Not recommended.** Multiple devices would create overlapping sessions and waste quota. Run on one primary device.
-
-### What if my Pi crashes?
-Use `--resume` to continue from where you left off. The script saves timestamps for recovery.
-
-### Does this work globally?
-**Yes!** Automatic timezone detection works worldwide. Daily reset times are in your local timezone.
-
-## 🐛 Troubleshooting
-
-### Claude Code Not Found
-```bash
-# Verify Claude Code installation
-claude --version
-which claude
-
-# If missing, reinstall:
-npm install -g @anthropic-ai/claude-code
-```
-
-### Permission Errors  
-```bash
-# Use virtual environment to avoid system conflicts
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-### Timeout Issues (Raspberry Pi)
-The script automatically increases timeouts for slow devices. If still timing out:
-```bash
-# Check available memory
-free -h
-
-# Increase swap if needed
-sudo dphys-swapfile swapoff
-sudo nano /etc/dphys-swapfile  # Set CONF_SWAPSIZE=1024
-sudo dphys-swapfile setup && sudo dphys-swapfile swapon
-```
-
-### Claude Code Authentication  
-```bash
-# Re-login if sessions fail
-claude login
-
-# Verify login works
-claude Hi
-```
-
-## 🤝 Contributing
-
-Contributions welcome! Please:
-
-1. **Fork** the repository
-2. **Create feature branch** (`git checkout -b feature/amazing-feature`)
-3. **Commit changes** (`git commit -m 'Add amazing feature'`)
-4. **Push to branch** (`git push origin feature/amazing-feature`)
-5. **Open Pull Request**
-
-### Development Setup
-```bash
-git clone https://github.com/awesomecoolraj/claude-session-keeper.git
-cd claude-session-keeper
-python3 -m venv dev-env
-source dev-env/bin/activate
-pip install -r requirements.txt
-```
-
-## 📄 License
-
-MIT License - Use it however you want!
-
-## 🎯 Real-World Impact
-
-> *"Just saved 2 hours with the 5-hour block for the first time!"* - @awesomecoolraj
-
-This script has helped users:
-- **Maximize Claude Code usage** during work hours
-- **Eliminate random session timing** frustrations  
-- **Run 24/7 monitoring** on Raspberry Pi devices
-- **Optimize development workflows** with predictable access
+Edit `profiles.json` or use the interactive menu to create custom schedules.
 
 ---
 
-**Made by [@awesomecoolraj](https://github.com/awesomecoolraj)**
+## 24/7 Operation
 
-*Intelligent Claude Code session management since 2025* ⏰
+### Run in Background
 
-**⭐ Star this repo if it helps optimize your Claude Code workflow!**
+```bash
+# Using nohup
+nohup csk --profile morning > ~/csk.log 2>&1 &
+
+# Using screen
+screen -S csk
+csk --profile morning
+# Ctrl+A, D to detach
+```
+
+### Auto-start on Boot (Linux)
+
+```bash
+# Add to crontab
+crontab -e
+
+# Add this line:
+@reboot /home/user/.local/bin/csk --resume >> /home/user/csk.log 2>&1
+```
+
+### Systemd Service
+
+Create `/etc/systemd/system/claude-session-keeper.service`:
+```ini
+[Unit]
+Description=Claude Session Keeper
+After=network.target
+
+[Service]
+Type=simple
+User=your-username
+ExecStart=/home/your-username/.local/bin/csk --profile morning
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then:
+```bash
+sudo systemctl enable claude-session-keeper
+sudo systemctl start claude-session-keeper
+```
+
+---
+
+## How It Works
+
+Claude Code uses **fixed 5-hour session windows**:
+1. Window starts with your **first message**
+2. You have 10-800 messages per window
+3. Window expires **5 hours after the first message**
+4. **This tool controls when that first message happens**
+
+**Without this tool:** Random session timing
+**With this tool:** Predictable sessions aligned with your schedule
+
+---
+
+## Raspberry Pi Optimization
+
+The script includes optimizations for low-power devices:
+- **Node.js memory limit:** 256MB max
+- **Reduced thread pool:** Minimizes CPU usage
+- **Disabled telemetry:** Saves bandwidth
+- **Lower process priority:** Won't interfere with other tasks
+
+**Power consumption:** ~$0.26/month on Raspberry Pi 3B
+
+---
+
+## FAQ
+
+**Is this allowed by Anthropic?**
+Yes! Uses Claude Code's official CLI as intended. Doesn't circumvent any restrictions.
+
+**Will this use up my quota?**
+Minimal impact - uses 1 message per 5-hour window (~4-5 messages/day).
+
+**Can I run on multiple devices?**
+Not recommended - would create overlapping sessions. Run on one device.
+
+**What if my system crashes?**
+Use `csk --resume` to continue from where you left off.
+
+---
+
+## Troubleshooting
+
+### Command Not Found After Install
+
+```bash
+# Reload your shell config
+source ~/.bashrc  # or ~/.zshrc
+
+# Or restart your terminal
+```
+
+### Claude Code Issues
+
+```bash
+# Verify Claude Code works
+claude --version
+claude Hi
+
+# Re-login if needed
+claude login
+```
+
+### Web Dashboard Won't Start
+
+```bash
+# Install Flask
+pip install flask
+
+# Try different port
+csk --web --port 8080
+```
+
+---
+
+## Development
+
+```bash
+# Clone and setup
+git clone https://github.com/nomadictuba2005/claude-session-keeper.git
+cd claude-session-keeper
+
+# Install in dev mode
+make install-dev
+
+# Run tests
+make test
+
+# Clean generated files
+make clean
+```
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing`)
+5. Open Pull Request
+
+---
+
+## License
+
+MIT License - Use it however you want!
+
+---
+
+## Support
+
+- **Issues:** [GitHub Issues](https://github.com/nomadictuba2005/claude-session-keeper/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/nomadictuba2005/claude-session-keeper/discussions)
+
+---
+
+**Claude Session Keeper v2.0** - Intelligent session management for Claude Code
+
+*Star this repo if it helps optimize your Claude Code workflow!*
