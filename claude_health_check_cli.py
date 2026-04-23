@@ -59,7 +59,7 @@ class ClaudeCodeHealthCheck:
         """Run a simple Claude Code CLI command"""
         try:
             # Use Claude Code CLI to send a simple message
-            self.logger.info("Executing: npx claude --dangerously-skip-permissions Hi")
+            self.logger.info("Executing: claude --dangerously-skip-permissions Hi")
             
             # RAM optimizations for Pi 3B
             import os
@@ -75,7 +75,7 @@ class ClaudeCodeHealthCheck:
             self.logger.info(f"RAM optimization: Node.js limited to 256MB")
             
             process = subprocess.Popen(
-                'npx claude --dangerously-skip-permissions Hi',
+                'claude --dangerously-skip-permissions Hi',
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
