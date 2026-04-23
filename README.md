@@ -49,7 +49,7 @@ Claude Code limits work with **fixed 5-hour windows**:
 
 ## Requirements
 
-- **Claude Code CLI** installed and logged in
+- **Claude Code CLI** installed, logged in, and available on your `PATH`
 - **Python 3.7+** with pip
 - **Node.js 18+** (for Claude Code)
 - **Linux/macOS/Windows** (optimized for Raspberry Pi)
@@ -72,7 +72,7 @@ claude login
 ### 2. Install Session Keeper
 ```bash
 # Clone this repository
-git clone https://github.com/awesomecoolraj/claude-session-keeper.git
+git clone https://github.com/nomadictuba2005/claude-session-keeper.git
 cd claude-session-keeper
 
 # Create virtual environment (recommended)
@@ -332,7 +332,7 @@ Contributions welcome! Please:
 
 ### Development Setup
 ```bash
-git clone https://github.com/awesomecoolraj/claude-session-keeper.git
+git clone https://github.com/nomadictuba2005/claude-session-keeper.git
 cd claude-session-keeper
 python3 -m venv dev-env
 source dev-env/bin/activate
